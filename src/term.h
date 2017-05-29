@@ -37,10 +37,10 @@ public:
     // Create a copy of the Term
     Term copy() const;
 
-    Term(std::function<Term()> f) : datum(Nil()) { set_function<std::function<Term()>>(f); }
-    Term(std::function<Term(Var)> f) : datum(Nil()) { set_function<std::function<Term(Var)>, 0>(f); }
-    Term(std::function<Term(Var, Var)> f) : datum(Nil()) { set_function<std::function<Term(Var, Var)>, 0, 1>(f); }
-    Term(std::function<Term(Var, Var, Var)> f) : datum(Nil()) { set_function<std::function<Term(Var, Var, Var)>, 0, 1, 2>(f); }
+    Term(std::function<Term()> f) : datum(Nothing()) { set_function<std::function<Term()>>(f); }
+    Term(std::function<Term(Var)> f) : datum(Nothing()) { set_function<std::function<Term(Var)>, 0>(f); }
+    Term(std::function<Term(Var, Var)> f) : datum(Nothing()) { set_function<std::function<Term(Var, Var)>, 0, 1>(f); }
+    Term(std::function<Term(Var, Var, Var)> f) : datum(Nothing()) { set_function<std::function<Term(Var, Var, Var)>, 0, 1, 2>(f); }
     Term(Protocol::Term::TermType type, std::vector<Term>&& args) : datum(Array()) {
         Array dargs;
         for (auto& it : args) {

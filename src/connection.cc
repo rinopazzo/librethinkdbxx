@@ -46,7 +46,7 @@ std::unique_ptr<Connection> connect(std::string host, int port, std::string auth
 
     struct addrinfo *p;
     Error error;
-    int sockfd;
+    int sockfd = 0;
     for (p = servinfo; p != NULL; p = p->ai_next) {
         sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
         if (sockfd == -1) {
@@ -321,7 +321,7 @@ Cursor Connection::start_query(Term *term, OptArgs&& opts) {
 
     d->run_query(Query{QueryType::START, token, term->datum, std::move(opts)});
     if (no_reply) {
-        return Cursor(new CursorPrivate(token, this, Nil()));
+        return Cursor(new CursorPrivate(token, this, Nothing()));
     }
 
     Cursor cursor(new CursorPrivate(token, this));

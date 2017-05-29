@@ -18,7 +18,7 @@ Datum read_datum(const std::string& json) {
 
 Datum read_datum(const rapidjson::Value &json) {
     switch(json.GetType()) {
-    case rapidjson::kNullType: return Nil();
+    case rapidjson::kNullType: return Nothing();
     case rapidjson::kFalseType: return false;
     case rapidjson::kTrueType: return true;
     case rapidjson::kNumberType: return json.GetDouble();

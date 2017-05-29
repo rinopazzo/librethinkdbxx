@@ -10,7 +10,7 @@ namespace RethinkDB {
 class Datum;
 
 // Represents a null datum
-struct Nil { };
+struct Nothing { };
 
 using Array = std::vector<Datum>;
 using Object = std::map<std::string, Datum>;
@@ -34,7 +34,7 @@ struct Time {
         epoch_time(epoch_time_), utc_offset(utc_offset_) { }
 
     static Time now() {
-        return Time(time(NULL));
+        return Time(std::time(NULL));
     }
 
     static bool parse_utc_offset(const std::string&, double*);
