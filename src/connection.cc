@@ -1,6 +1,8 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/select.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
 #include <netdb.h>
 #include <unistd.h>
@@ -16,10 +18,14 @@
 #include "term.h"
 #include "cursor_p.h"
 
+#include "handshake.h"
+
 #include "rapidjson-config.h"
 #include "rapidjson/rapidjson.h"
 #include "rapidjson/encodedstream.h"
 #include "rapidjson/document.h"
+
+#define FAIL    -1
 
 namespace RethinkDB {
 
@@ -31,7 +37,29 @@ const uint32_t version_magic =
     static_cast<uint32_t>(Protocol::VersionDummy::Version::V0_4);
 const uint32_t json_magic =
     static_cast<uint32_t>(Protocol::VersionDummy::Protocol::JSON);
-
+ 
+/*
+void ShowCerts(SSL* ssl)
+{   X509 *cert;
+    char *line;
+    
+    cert = SSL_get_peer_certificate(ssl);
+    if ( cert != NULL )
+    {
+        printf("Server certificates:\n");
+        line = X509_NAME_oneline(X509_get_subject_name(cert), 0, 0);
+        printf("Subject: %s\n", line);
+        free(line);
+        line = X509_NAME_oneline(X509_get_issuer_name(cert), 0, 0);
+        printf("Issuer: %s\n", line);
+        free(line);
+        X509_free(cert);
+    }
+    else
+        printf("No certificates.\n");
+}
+*/
+    
 std::unique_ptr<Connection> connect(std::string host, int port, std::string auth_key) {
     struct addrinfo hints;
     memset(&hints, 0, sizeof hints);
@@ -96,6 +124,72 @@ std::unique_ptr<Connection> connect(std::string host, int port, std::string auth
 
     return std::unique_ptr<Connection>(new Connection(conn_private.release()));
 }
+    
+std::unique_ptr<Connection> connect(std::string host, int port, std::string username, std::string password){
+    
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    
+    char port_str[16];
+    snprintf(port_str, 16, "%d", port);
+    struct addrinfo *servinfo;
+    int ret = getaddrinfo(host.c_str(), port_str, &hints, &servinfo);
+    if (ret) throw Error("getaddrinfo: %s\n", gai_strerror(ret));
+    
+    struct addrinfo *p;
+    Error error;
+    int sockfd = 0;
+    for (p = servinfo; p != NULL; p = p->ai_next) {
+        sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+        if (sockfd == -1) {
+            error = Error::from_errno("socket");
+            continue;
+        }
+        
+        if (connect(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
+            ::close(sockfd);
+            error = Error::from_errno("connect");
+            continue;
+        }
+        
+        break;
+    }
+    
+    if (p == NULL) {
+        throw error;
+    }
+    
+    freeaddrinfo(servinfo);
+    
+    std::unique_ptr<ConnectionPrivate> conn_private(new SSLConnectionPrivate(sockfd));
+    
+    Handshake handshake(username, password);
+    int32_t wlen = 0;
+    unsigned char* wdata = (unsigned char*)malloc(DATA_MAX_SIZE*sizeof(unsigned char));
+    memset(wdata, 0, DATA_MAX_SIZE);
+    bool hasNextMessage = handshake.nextMessage(wdata, &wlen);
+    
+    WriteLock writer(conn_private.get());
+    ReadLock reader(conn_private.get());
+
+    while(!handshake.isFinished()){
+        if(hasNextMessage){
+            writer.send((const char*)wdata, wlen);
+        }
+        char buf[1024 + 1];
+        memset(buf, 0, 1024+1);
+        
+        reader.recv_cstring(buf, 1024);
+        std::string s(buf);
+        
+        memset(wdata, 0, DATA_MAX_SIZE);
+        hasNextMessage = handshake.nextMessage(wdata, &wlen, s);
+    }
+    
+    return std::unique_ptr<Connection>(new Connection(conn_private.release()));
+}
 
 Connection::Connection(ConnectionPrivate *dd) : d(dd) { }
 Connection::~Connection() {
@@ -126,7 +220,7 @@ size_t ReadLock::recv_some(char* buf, size_t size, double wait) {
         }
     }
 
-    ssize_t numbytes = ::recv(conn->guarded_sockfd, buf, size, 0);
+    ssize_t numbytes = conn->recv(buf, size, 0);
     if (numbytes == -1) throw Error::from_errno("recv");
     if (debug_net > 1) {
         fprintf(stderr, "<< %s\n", write_datum(std::string(buf, numbytes)).c_str());
@@ -158,7 +252,7 @@ size_t ReadLock::recv_cstring(char* buf, size_t max_size){
 
 void WriteLock::send(const char* buf, size_t size) {
     while (size) {
-        ssize_t numbytes = ::write(conn->guarded_sockfd, buf, size);
+        ssize_t numbytes = conn->write(buf, size);
         if (numbytes == -1) throw Error::from_errno("write");
         if (debug_net > 1) {
             fprintf(stderr, ">> %s\n", write_datum(std::string(buf, numbytes)).c_str());
@@ -304,6 +398,44 @@ Response ReadLock::read_loop(uint64_t token_want, CacheLock&& guard, double wait
 void ConnectionPrivate::run_query(Query query, bool no_reply) {
     WriteLock writer(this);
     writer.send(query.serialize());
+}
+    
+ssize_t	ConnectionPrivate::write(const void * __buf, size_t __nbyte){
+    return ::write(guarded_sockfd, __buf, __nbyte);
+}
+
+ssize_t	ConnectionPrivate::recv(void * __buf, size_t __nbyte, int __flags){
+    return ::recv(guarded_sockfd, __buf, __nbyte, __flags);
+}
+    
+SSLConnectionPrivate::SSLConnectionPrivate(int sockfd) : ConnectionPrivate(sockfd){
+    OpenSSL_add_all_algorithms();
+    SSL_load_error_strings();
+    const SSL_METHOD *method = TLSv1_2_client_method();
+    ctx = SSL_CTX_new(method);
+    if ( ctx == NULL )
+    {
+        ERR_print_errors_fp(stderr);
+    }
+    ssl = SSL_new(ctx);
+    SSL_set_fd(ssl, sockfd);
+    int connect;
+    if ( (connect = SSL_connect(ssl)) <0 ){
+        ERR_print_errors_fp(stderr);
+    }
+}
+
+SSLConnectionPrivate::~SSLConnectionPrivate(){
+    SSL_free(ssl);
+    SSL_CTX_free(ctx);
+}
+    
+ssize_t	SSLConnectionPrivate::write(const void * __buf, size_t __nbyte){
+    return SSL_write(ssl, __buf, (int)__nbyte);
+}
+
+ssize_t	SSLConnectionPrivate::recv(void * __buf, size_t __nbyte, int __flags){
+    return SSL_read(ssl, __buf, (int)__nbyte);
 }
 
 Cursor Connection::start_query(Term *term, OptArgs&& opts) {

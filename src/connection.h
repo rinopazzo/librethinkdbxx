@@ -50,10 +50,13 @@ private:
     friend class Term;
     friend std::unique_ptr<Connection>
         connect(std::string host, int port, std::string auth_key);
+    friend std::unique_ptr<Connection>
+        connect(std::string host, int port, std::string username, std::string password);
 
 };
 
 // $doc(connect)
 std::unique_ptr<Connection> connect(std::string host = "localhost", int port = 28015, std::string auth_key = "");
+std::unique_ptr<Connection> connect(std::string host, int port, std::string username, std::string password);
 
 }

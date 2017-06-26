@@ -370,7 +370,7 @@ private:
 };
 
 // A term representing null
-Term nil();
+Term nothing();
 
 template <class T>
 Term expr(T&& a) {
