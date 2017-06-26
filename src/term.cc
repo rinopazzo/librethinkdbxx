@@ -33,7 +33,7 @@ struct {
 Term::Term(Datum&& datum_) : datum(datum_.apply<Datum>(datum_to_term)) { }
 Term::Term(const Datum& datum_) : datum(datum_.apply<Datum>(datum_to_term)) { }
 
-Term::Term(Term&& orig, OptArgs&& new_optargs) : datum(Nil()) {
+Term::Term(Term&& orig, OptArgs&& new_optargs) : datum(Nothing()) {
     Datum* cur = orig.datum.get_nth(2);
     Object optargs;
     free_vars = std::move(orig.free_vars);
@@ -47,7 +47,7 @@ Term::Term(Term&& orig, OptArgs&& new_optargs) : datum(Nil()) {
 }
 
 Term nil() {
-    return Term(Nil());
+    return Term(Nothing());
 }
 
 Cursor Term::run(Connection& conn, OptArgs&& opts) {
@@ -207,7 +207,7 @@ Term Term::func_wrap(Term&& term) {
 Term Term::func_wrap(const Term& term) {
     if (term.datum.apply<bool>(needs_func_wrap)) {
         // TODO return Term(TT::FUNC, {expr(Array{new_var_id(Term.free_vars)}), Term.copy()});
-        return Term(Nil());
+        return Term(Nothing());
     }
     return term;
 }
@@ -224,7 +224,7 @@ Term Term::make_object(std::vector<Term>&& args) {
         }
         keys.insert(*key);
     }
-    Term ret{Nil()};
+    Term ret{Nothing()};
     Object object;
     for (auto it = args.begin(); it != args.end(); it += 2) {
         std::string* key = it->datum.get_string();
@@ -242,7 +242,7 @@ Term Term::make_binary(Term&& term) {
     return Term(TT::BINARY, std::vector<Term>{term});
 }
 
-Term::Term(OptArgs&& optargs) : datum(Nil()) {
+Term::Term(OptArgs&& optargs) : datum(Nothing()) {
     Object oargs;
     for (auto& it : optargs) {
         oargs.emplace(it.first, alpha_rename(std::move(it.second)));

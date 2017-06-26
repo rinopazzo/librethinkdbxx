@@ -101,7 +101,7 @@ Datum Cursor::to_datum() const & {
 }
 
 Datum Cursor::to_datum() && {
-    Datum ret((Nil()));
+    Datum ret((Nothing()));
     if (d->single) {
         if (d->index != 0) {
             throw Error("to_datum: already consumed");

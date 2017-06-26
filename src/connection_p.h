@@ -1,11 +1,14 @@
 #ifndef CONNECTION_P_H
 #define CONNECTION_P_H
 
+#define __STDC_FORMAT_MACROS 1
 #include <inttypes.h>
 
 #include "connection.h"
 #include "term.h"
 #include "json_p.h"
+#include <openssl/ssl.h>
+
 
 namespace RethinkDB {
 
@@ -85,6 +88,20 @@ public:
     uint64_t guarded_next_token;
     int guarded_sockfd;
     bool guarded_loop_active;
+    
+    virtual ssize_t	write(const void * __buf, size_t __nbyte);
+    virtual ssize_t	recv(void * __buf, size_t __nbyte, int __flags);
+};
+    
+class SSLConnectionPrivate : public ConnectionPrivate{
+public:
+    SSLConnectionPrivate(int sockfd);
+    ~SSLConnectionPrivate();
+    virtual ssize_t	write(const void * __buf, size_t __nbyte);
+    virtual ssize_t	recv(void * __buf, size_t __nbyte, int __flags);
+private:
+    SSL* ssl;
+    SSL_CTX *ctx;
 };
 
 class CacheLock {
